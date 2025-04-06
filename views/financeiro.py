@@ -1,0 +1,205 @@
+import streamlit as st
+import pandas as pd
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
+import os
+
+CAMINHO_CSV = "financeiro.csv"
+CAMINHO_LIQUIDADOS = "pagamentos_liquidados.csv"
+
+def carregar_dados():
+    if os.path.exists(CAMINHO_CSV):
+        df = pd.read_csv(CAMINHO_CSV)
+        df["Data Inicial"] = pd.to_datetime(df["Data Inicial"], errors="coerce")
+        df["Vencimento"] = pd.to_datetime(df["Vencimento"], errors="coerce")
+    else:
+        df = pd.DataFrame(columns=["Cliente", "Serviço", "Valor", "Data Inicial", "Vencimento", "Parcelas", "Pagas"])
+    return df
+
+def salvar_dados(df):
+    df.to_csv(CAMINHO_CSV, index=False, date_format="%Y-%m-%d")
+
+def registrar_liquidado(cliente, servico, valor_total, data_final):
+    df_liq = pd.read_csv(CAMINHO_LIQUIDADOS) if os.path.exists(CAMINHO_LIQUIDADOS) else pd.DataFrame(columns=["Cliente", "Serviço", "Valor Total", "Data Final"])
+    nova_linha = {
+        "Cliente": cliente,
+        "Serviço": servico,
+        "Valor Total": f"R$ {valor_total:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
+        "Data Final": data_final.strftime("%d/%m/%Y")
+    }
+    df_liq = pd.concat([df_liq, pd.DataFrame([nova_linha])], ignore_index=True)
+    df_liq.to_csv(CAMINHO_LIQUIDADOS, index=False)
+
+def excluir_liquidado(index):
+    if os.path.exists(CAMINHO_LIQUIDADOS):
+        df_liq = pd.read_csv(CAMINHO_LIQUIDADOS)
+        df_liq = df_liq.drop(index).reset_index(drop=True)
+        df_liq.to_csv(CAMINHO_LIQUIDADOS, index=False)
+
+def adicionar_pagamento(df, index):
+    df.loc[index, "Pagas"] += 1
+    if df.loc[index, "Pagas"] < df.loc[index, "Parcelas"]:
+        df.loc[index, "Vencimento"] = df.loc[index, "Vencimento"] + relativedelta(months=1)
+    else:
+        registrar_liquidado(
+            df.loc[index, "Cliente"],
+            df.loc[index, "Serviço"],
+            df.loc[index, "Valor"] * df.loc[index, "Parcelas"],
+            df.loc[index, "Vencimento"]
+        )
+        df = df.drop(index)
+    return df
+
+def exibir_financeiro():
+    st.title("💰 Controle Financeiro")
+
+    df = carregar_dados()
+
+    with st.expander("➕ Novo lançamento"):
+        with st.form("novo_pagamento"):
+            cliente = st.text_input("Nome do Cliente")
+            servico = st.text_input("Referência do serviço prestado")
+            valor = st.number_input("Valor da parcela (R$)", min_value=0.0, format="%.2f")
+            data_inicial = st.date_input("Data Inicial", format="DD/MM/YYYY")
+            parcelas = st.number_input("Quantidade de parcelas", min_value=1, step=1)
+            submit = st.form_submit_button("Cadastrar")
+
+            if submit:
+                vencimento = datetime.combine(data_inicial, datetime.min.time())
+                nova_entrada = {
+                    "Cliente": cliente,
+                    "Serviço": servico,
+                    "Valor": valor,
+                    "Data Inicial": data_inicial,
+                    "Vencimento": vencimento,
+                    "Parcelas": parcelas,
+                    "Pagas": 0
+                }
+                df = pd.concat([df, pd.DataFrame([nova_entrada])], ignore_index=True)
+                salvar_dados(df)
+                st.success("Pagamento cadastrado com sucesso!")
+                st.rerun()
+
+    if df.empty:
+        st.info("Nenhum pagamento registrado.")
+        return
+
+    st.subheader("📋 Pagamentos Pendentes")
+
+    df = df.sort_values("Vencimento")
+    df_filtrado = df[df["Pagas"] < df["Parcelas"]].copy()
+    df_filtrado["Data Inicial"] = df_filtrado["Data Inicial"].dt.strftime("%d/%m/%Y")
+    df_filtrado["Vencimento"] = df_filtrado["Vencimento"].dt.strftime("%d/%m/%Y")
+    df_filtrado["Valor"] = df_filtrado["Valor"].apply(lambda x: f'R$ {x:,.2f}'.replace(",", "X").replace(".", ",").replace("X", "."))
+
+    if "confirmar_pagamento" not in st.session_state:
+        st.session_state.confirmar_pagamento = None
+
+    # Cabeçalho da tabela de pendentes
+    col_header = st.columns([2, 2, 2, 2, 1, 1, 1, 1])
+    col_header[0].markdown("**Cliente**")
+    col_header[1].markdown("**Serviço**")
+    col_header[2].markdown("**Valor da Parcela**")
+    col_header[3].markdown("**Vencimento**")
+    col_header[4].markdown("**Parcela Atual**")
+    col_header[5].markdown("**Registrar**")
+
+    for i, row in df_filtrado.iterrows():
+        col1, col2, col3, col4, col5, col6, col7, col8 = st.columns([2, 2, 2, 2, 1, 1, 1, 1])
+        with col1: st.write(row["Cliente"])
+        with col2: st.write(row["Serviço"])
+        with col3: st.write(row["Valor"])
+        with col4: st.write(row["Vencimento"])
+        with col5: st.write(f'{int(row["Pagas"]) + 1} / {int(row["Parcelas"])}')
+        with col6:
+            if st.button("➕", key=f"parcela_{i}"):
+                st.session_state.confirmar_pagamento = i
+                st.rerun()
+
+        if st.session_state.confirmar_pagamento == i:
+            st.warning(f"Deseja confirmar que **{row['Cliente']}** pagou a parcela {int(row['Pagas']) + 1}?")
+            col_conf1, col_conf2 = st.columns(2)
+            with col_conf1:
+                if st.button("✅ Sim", key=f"sim_{i}"):
+                    df = adicionar_pagamento(df, i)
+                    salvar_dados(df)
+                    st.session_state.confirmar_pagamento = None
+                    st.rerun()
+            with col_conf2:
+                if st.button("❌ Não", key=f"nao_{i}"):
+                    st.session_state.confirmar_pagamento = None
+                    st.rerun()
+
+    if os.path.exists(CAMINHO_LIQUIDADOS):
+        st.subheader("✅ Pagamentos Liquidados")
+        df_liq = pd.read_csv(CAMINHO_LIQUIDADOS)
+        col1, col2, col3, col4, col5 = st.columns([2, 2, 3, 2, 0.5])
+        with col1: st.markdown("**Cliente**")
+        with col2: st.markdown("**Serviço**")
+        with col3: st.markdown("**Valor Total**")
+        with col4: st.markdown("**Data Final**")
+        with col5: st.markdown("**Remover**")
+
+        for i, row in df_liq.iterrows():
+            col1, col2, col3, col4, col5 = st.columns([2, 2, 3, 2, 0.5])
+            with col1: st.write(row["Cliente"])
+            with col2: st.write(row["Serviço"])
+            with col3: st.write(row["Valor Total"])
+            with col4: st.write(row["Data Final"])
+            with col5:
+                if st.button("❌", key=f"excluir_liq_{i}"):
+                    st.session_state.confirmar_exclusao_liq = i
+                    st.rerun()
+
+            if "confirmar_exclusao_liq" in st.session_state and st.session_state.confirmar_exclusao_liq == i:
+                st.warning(f"Tem certeza que deseja excluir o pagamento de **{row['Cliente']}**?")
+                col_conf1, col_conf2 = st.columns([1, 1])
+                with col_conf1:
+                    if st.button("✅ Sim", key=f"confirmar_sim_{i}"):
+                        excluir_liquidado(i)
+                        del st.session_state.confirmar_exclusao_liq
+                        st.rerun()
+                with col_conf2:
+                    if st.button("❌ Não", key=f"confirmar_nao_{i}"):
+                        del st.session_state.confirmar_exclusao_liq
+                        st.rerun()
+
+from datetime import timedelta
+
+def obter_parcelas_da_semana():
+    if not os.path.exists(CAMINHO_CSV):
+        return pd.DataFrame()
+
+    df = pd.read_csv(CAMINHO_CSV)
+    df["Vencimento"] = pd.to_datetime(df["Vencimento"], errors="coerce")
+    df["Pagas"] = pd.to_numeric(df["Pagas"], errors="coerce").fillna(0)
+    df["Parcelas"] = pd.to_numeric(df["Parcelas"], errors="coerce").fillna(1)
+
+    hoje = datetime.today().date()
+    fim_da_semana = hoje + timedelta(days=7)
+
+    df_semana = df[
+        (df["Pagas"] < df["Parcelas"]) &
+        (df["Vencimento"].dt.date >= hoje) &
+        (df["Vencimento"].dt.date <= fim_da_semana)
+    ]
+
+    return df_semana
+
+def obter_parcelas_em_atraso():
+    if not os.path.exists(CAMINHO_CSV):
+        return pd.DataFrame()
+
+    df = pd.read_csv(CAMINHO_CSV)
+    df["Vencimento"] = pd.to_datetime(df["Vencimento"], errors="coerce")
+    df["Pagas"] = pd.to_numeric(df["Pagas"], errors="coerce").fillna(0)
+    df["Parcelas"] = pd.to_numeric(df["Parcelas"], errors="coerce").fillna(1)
+
+    hoje = datetime.today().date()
+
+    df_atraso = df[
+        (df["Pagas"] < df["Parcelas"]) &
+        (df["Vencimento"].dt.date < hoje)
+    ]
+
+    return df_atraso

@@ -1,0 +1,81 @@
+import streamlit as st
+from datetime import datetime
+import pandas as pd
+import os
+
+# Importações dos módulos/views
+from views.financeiro import exibir_financeiro
+from views.parecer import gerar_parecer
+from views.orcamento import simulador_orcamento
+from views.agenda import agenda
+from views.base_conhecimento import base_conhecimento
+from views.relatorios import relatorios
+from views.processos import controle_processos
+from views.documentos import documentos
+from views.pendencias import controle_pendencias
+from views.tarefas import exibir_tarefas
+from views.painel_principal import painel_principal
+
+def main():
+    st.set_page_config(page_title="Sistema Berggren", layout="wide")
+    st.sidebar.title("📂 Menu de Navegação")
+
+    # Categoria principal
+    categoria = st.sidebar.selectbox("Escolha uma categoria", [
+        "📊 Painel",
+        "🔧 Ferramentas",
+        "📁 Controles",
+        "📚 Auxiliares"
+    ])
+
+    # Submenu baseado na categoria escolhida
+    if categoria == "📊 Painel":
+        opcao = st.sidebar.radio("Selecione:", [
+            "📊 Painel Principal",
+            "📌 Tarefas / Roadmap"
+        ])
+    elif categoria == "🔧 Ferramentas":
+        opcao = st.sidebar.radio("Selecione:", [
+            "📄 Gerador de Parecer",
+            "🧾 Simulador de Orçamento",
+            "📆 Agendamentos"
+        ])
+    elif categoria == "📁 Controles":
+        opcao = st.sidebar.radio("Selecione:", [
+            "📌 Controle de Pendências",
+            "💰 Controle Financeiro",
+            "📋 Controle de Processos",
+            "📁 Gestão de Documentos"
+        ])
+    elif categoria == "📚 Auxiliares":
+        opcao = st.sidebar.radio("Selecione:", [
+            "📚 Base de Conhecimento",
+            "📊 Relatórios"
+        ])
+
+    # Lógica de navegação
+    if opcao == "📊 Painel Principal":
+        painel_principal()
+    elif opcao == "📌 Tarefas / Roadmap":
+        exibir_tarefas()
+    elif opcao == "📄 Gerador de Parecer":
+        gerar_parecer()
+    elif opcao == "🧾 Simulador de Orçamento":
+        simulador_orcamento()
+    elif opcao == "📆 Agendamentos":
+        agenda()
+    elif opcao == "📌 Controle de Pendências":
+        controle_pendencias()
+    elif opcao == "💰 Controle Financeiro":
+        exibir_financeiro()
+    elif opcao == "📋 Controle de Processos":
+        controle_processos()
+    elif opcao == "📁 Gestão de Documentos":
+        documentos()
+    elif opcao == "📚 Base de Conhecimento":
+        base_conhecimento()
+    elif opcao == "📊 Relatórios":
+        relatorios()
+
+if __name__ == "__main__":
+    main()
