@@ -128,11 +128,9 @@ def controle_processos():
                         salvar_processos(df_processos)
                         st.success(f"Processo {row['Número do Processo']} excluído com sucesso!")
                         del st.session_state[f"confirm_delete_{i}"]
-                        st.rerun()  # Forçar atualização da página após a exclusão
 
                     if st.button("❌ Não", key=f"confirm_delete_{i}_no"):
                         del st.session_state[f"confirm_delete_{i}"]
-                        st.rerun()  # Forçar atualização após cancelar a exclusão
 
     else:
         st.info("Nenhum processo cadastrado.")
